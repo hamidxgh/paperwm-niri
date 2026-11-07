@@ -53,11 +53,35 @@ export default class PaperWM extends Extension {
     ];
 
     #userStylesheet = null;
+    #themeChangedId = 0;
+    #reloadTimeout = 0;
+    /**
+     * load_stylesheet emits ThemeContext 'changed'. If we reload from that
+     * signal without a guard, gnome-shell hits "too much recursion" and freezes
+     * the topbar for minutes after login/unlock.
+     */
+    #reloadingStyles = false;
 
     enable() {
-        console.log(`#PaperWM enabled`);
+        console.log(`#PaperWM enabled (proportion)`);
         this.enableUserConfig();
         this.enableUserStylesheet();
+        // Unlock / theme switch rebuilds St.Theme and drops loaded stylesheets.
+        // Re-apply user.css once, debounced + re-entry guarded.
+        const themeContext = St.ThemeContext.get_for_stage(global.stage);
+        this.#themeChangedId = themeContext.connect('changed', () => {
+            if (this.#reloadingStyles) {
+                return;
+            }
+            if (this.#reloadTimeout) {
+                GLib.source_remove(this.#reloadTimeout);
+            }
+            this.#reloadTimeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 200, () => {
+                this.#reloadTimeout = 0;
+                this.enableUserStylesheet();
+                return GLib.SOURCE_REMOVE;
+            });
+        });
 
         // run enable method (with extension argument on all modules)
         this.modules.forEach(m => {
@@ -70,6 +94,14 @@ export default class PaperWM extends Extension {
     disable() {
         console.log('#PaperWM disabled');
         this.prepareForDisable();
+        if (this.#reloadTimeout) {
+            GLib.source_remove(this.#reloadTimeout);
+            this.#reloadTimeout = 0;
+        }
+        if (this.#themeChangedId) {
+            St.ThemeContext.get_for_stage(global.stage).disconnect(this.#themeChangedId);
+            this.#themeChangedId = 0;
+        }
         [...this.modules].reverse().forEach(m => {
             if (m['disable']) {
                 m.disable();
@@ -178,13 +210,37 @@ export default class PaperWM extends Extension {
     }
 
     /**
-     * Reloads user.css styles (if user.css present in ~/.config/paperwm).
+     * Loads user.css. Re-entrancy safe: load_stylesheet may emit theme
+     * 'changed'; we keep #reloadingStyles until the next idle.
      */
     enableUserStylesheet() {
-        this.#userStylesheet = this.getConfigDir().get_child("user.css");
-        if (this.#userStylesheet.query_exists(null)) {
-            let themeContext = St.ThemeContext.get_for_stage(global.stage);
-            themeContext.get_theme().load_stylesheet(this.#userStylesheet);
+        if (this.#reloadingStyles) {
+            return;
+        }
+        const file = this.getConfigDir().get_child("user.css");
+        if (!file.query_exists(null)) {
+            return;
+        }
+
+        this.#reloadingStyles = true;
+        try {
+            const theme = St.ThemeContext.get_for_stage(global.stage).get_theme();
+            if (this.#userStylesheet) {
+                try {
+                    theme.unload_stylesheet(this.#userStylesheet);
+                } catch (_e) {
+                    /* theme may already have dropped it on rebuild */
+                }
+            }
+            this.#userStylesheet = file;
+            theme.load_stylesheet(this.#userStylesheet);
+        } catch (error) {
+            console.error('PaperWM', `load user.css failed: ${error}`);
+        } finally {
+            GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+                this.#reloadingStyles = false;
+                return GLib.SOURCE_REMOVE;
+            });
         }
     }
 
@@ -192,9 +248,18 @@ export default class PaperWM extends Extension {
      * Unloads user.css styles (if user.css present in ~/.config/paperwm).
      */
     disableUserStylesheet() {
-        let themeContext = St.ThemeContext.get_for_stage(global.stage);
-        themeContext.get_theme().unload_stylesheet(this.#userStylesheet);
+        if (!this.#userStylesheet) {
+            return;
+        }
+        this.#reloadingStyles = true;
+        try {
+            let themeContext = St.ThemeContext.get_for_stage(global.stage);
+            themeContext.get_theme().unload_stylesheet(this.#userStylesheet);
+        } catch (_e) {
+            /* ignore */
+        }
         this.#userStylesheet = null;
+        this.#reloadingStyles = false;
     }
 
     spawnPager(content) {
