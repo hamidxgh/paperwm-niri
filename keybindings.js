@@ -81,6 +81,39 @@ export function registerMinimapAction(name, handler) {
 }
 
 
+/**
+ * At strip edge: move the window to the neighbor monitor.
+ * Must leave the minimap navigator first — moving while it is open warps the
+ * pointer but the finish path can leave the window on the old monitor.
+ * Then reuse PaperWM's switchMonitor(move=true) with focus pinned to `win`.
+ */
+function moveWindowToNeighborMonitor(win, _space, direction) {
+    if (!win)
+        return;
+    const metaWindow = win.get_transient_for() || win;
+
+    // Close navigator cleanly so finish() cannot undo the monitor move.
+    if (Navigator.navigating) {
+        try {
+            const nav = Navigator.getNavigator();
+            nav.accept();
+            nav.destroy();
+        } catch (_e) {
+            // ignore — fall through to switchMonitor anyway
+        }
+    }
+
+    // switchMonitor(move=true) moves display.focus_window; pin focus first.
+    if (metaWindow !== display.focus_window) {
+        try {
+            metaWindow.activate(global.get_current_time());
+        } catch (_e) {
+            Main.activateWindow(metaWindow);
+        }
+    }
+    Tiling.spaces.switchMonitor(direction, true);
+}
+
 let signals, actions, nameMap, actionIdMap, keycomboMap;
 export function setupActions(settings) {
     signals = new Utils.Signals();
@@ -228,9 +261,28 @@ export function setupActions(settings) {
     registerMinimapAction("switch-global-down", (mw, space) => space.switchGlobalDown());
 
     registerMinimapAction("move-left",
-        (_mw, space) => space.swap(Meta.MotionDirection.LEFT));
+        (mw, space) => {
+            // Within strip when possible; at left edge move window to left monitor.
+            // Prefer selectedWindow over focus_window (minimap nav can desync focus).
+            const win = space.selectedWindow || mw;
+            const i = space.indexOf(win);
+            if (i > 0) {
+                space.swap(Meta.MotionDirection.LEFT, win);
+                return;
+            }
+            moveWindowToNeighborMonitor(win, space, Meta.DisplayDirection.LEFT);
+        });
     registerMinimapAction("move-right",
-        (_mw, space) => space.swap(Meta.MotionDirection.RIGHT));
+        (mw, space) => {
+            // Within strip when possible; at right edge move window to right monitor.
+            const win = space.selectedWindow || mw;
+            const i = space.indexOf(win);
+            if (i >= 0 && i < space.length - 1) {
+                space.swap(Meta.MotionDirection.RIGHT, win);
+                return;
+            }
+            moveWindowToNeighborMonitor(win, space, Meta.DisplayDirection.RIGHT);
+        });
     registerMinimapAction("move-up",
         (_mw, space) => space.swap(Meta.MotionDirection.UP));
     registerMinimapAction("move-down",
@@ -337,6 +389,9 @@ export function setupActions(settings) {
 
     registerPaperAction('paper-toggle-fullscreen',
         metaWindow => {
+            // Win+F: fullscreen; remember so proportional layout does not fight it
+            if (metaWindow)
+                metaWindow._proportionUserOverride = true;
             if (metaWindow.fullscreen) {
                 metaWindow.unmake_fullscreen();
             }

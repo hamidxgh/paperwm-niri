@@ -1,3 +1,4 @@
+console.log('#PaperWM tiling_pwm_proportion MODULE LOADED');
 import Clutter from 'gi://Clutter';
 import GDesktopEnums from 'gi://GDesktopEnums';
 import Gio from 'gi://Gio';
@@ -24,6 +25,24 @@ export let spaces;
 
 let borderWidth = 8;
 
+// LOCAL PATCH: theme-following selection border color.
+// ~/.local/bin/theme-set writes a hex color to ~/.config/paperwm/selection-color.
+const SELECTION_COLOR_FILE = GLib.build_filenamev([GLib.get_user_config_dir(), 'paperwm', 'selection-color']);
+let selectionColor = '#bbf1dd';
+let selectionColorMonitor = null;
+function readSelectionColor() {
+    try {
+        const [ok, bytes] = GLib.file_get_contents(SELECTION_COLOR_FILE);
+        if (!ok)
+            return;
+        const c = new TextDecoder().decode(bytes).trim();
+        if (/^#[0-9a-fA-F]{3,8}$/.test(c))
+            selectionColor = c;
+    } catch (e) {
+        // file missing: keep current color
+    }
+}
+
 // Mutter prevints windows from being placed further off the screen than 75 pixels.
 export const stack_margin = 75;
 
@@ -35,6 +54,75 @@ export let inPreview = PreviewMode.NONE; // export
 
 // DEFAULT mode is normal/original PaperWM window focus behaviour
 export const FocusModes = { DEFAULT: 0, CENTER: 1, EDGE: 2 }; // export
+
+// LOCAL PATCH: niri/Omarchy-style proportional focus (see focusTargetWidth / ensuredX)
+export const ProportionalFocus = {
+    ENABLED: true,
+    PEEK: 0.05,
+};
+
+/** Side inset for single-window mode (left+right gutters). */
+function singleWindowSideInset() {
+    // Match vertical gutters; never collapse to 0
+    return Math.max(
+        Settings.prefs.horizontal_margin || 0,
+        Settings.prefs.vertical_margin || 0,
+        Settings.prefs.window_gap || 0,
+        6
+    );
+}
+
+/**
+ * Focused column target width (niri-style, gaps always kept):
+ *   1 col  -> full width minus side gaps
+ *   edge   -> side gap | window | gap | 5% peek      (~94%)
+ *   middle -> 5% peek | gap | window | gap | 5% peek (~89%)
+ */
+function focusTargetWidth(workAreaWidth, nCols, index) {
+    const side = singleWindowSideInset();
+    const gap = Settings.prefs.window_gap || 0;
+    const peek = Math.round(workAreaWidth * ProportionalFocus.PEEK);
+    if (nCols <= 1)
+        return Math.max(200, workAreaWidth - 2 * side);
+    if (index === 0 || index === nCols - 1)
+        return Math.max(200, workAreaWidth - side - gap - peek);
+    return Math.max(200, workAreaWidth - 2 * peek - 2 * gap);
+}
+
+/** Tiny inset so selection border stays inside the viewport. */
+function borderPad() {
+    return Math.max(Settings.prefs.selection_border_size || 0, 3);
+}
+
+/** Full clip: edge gaps stay visible; peeking neighbours are cut at the screen edge (like niri). */
+function applyPeekSideClip(space, _index, _n) {
+    if (space?.cloneClip)
+        space.cloneClip.set_clip(0, 0, space.width, space.height);
+}
+
+function shouldSkipProportion(metaWindow) {
+    if (!metaWindow)
+        return true;
+    if (metaWindow.fullscreen || isMaximized(metaWindow))
+        return true;
+    if (metaWindow._proportionUserOverride)
+        return true;
+    if (Scratch.isScratchWindow(metaWindow))
+        return true;
+    return false;
+}
+
+/** Mark window so proportional layout will not override Win+R / Win+F sizes. */
+export function lockProportionOverride(metaWindow) {
+    if (metaWindow)
+        metaWindow._proportionUserOverride = true;
+}
+
+export function clearProportionOverride(metaWindow) {
+    if (metaWindow)
+        delete metaWindow._proportionUserOverride;
+}
+let _proportionLayoutLock = false;
 
 export const CycleWindowSizesDirection = { FORWARD: 0, BACKWARDS: 1 };
 
@@ -145,6 +233,17 @@ export function enable(extension) {
     gsettings.connect('changed::selection-border-radius-top', changedBorder);
     gsettings.connect('changed::selection-border-radius-bottom', changedBorder);
 
+    // LOCAL PATCH: live-update border color when theme-set rewrites the file
+    readSelectionColor();
+    selectionColorMonitor = Gio.File.new_for_path(SELECTION_COLOR_FILE)
+        .monitor_file(Gio.FileMonitorFlags.NONE, null);
+    selectionColorMonitor.connect('changed', (_m, _f, _o, event) => {
+        if (event !== Gio.FileMonitorEvent.CHANGES_DONE_HINT && event !== Gio.FileMonitorEvent.CREATED)
+            return;
+        readSelectionColor();
+        changedBorder();
+    });
+
     backgroundGroup = Main.layoutManager._backgroundGroup;
 
     workspaceSettings = new WorkspaceSettings(extension);
@@ -205,6 +304,8 @@ export function enable(extension) {
 }
 
 export function disable() {
+    selectionColorMonitor?.cancel();
+    selectionColorMonitor = null;
     Utils.timeout_remove(startupTimeoutId);
     startupTimeoutId = null;
     Utils.timeout_remove(timerId);
@@ -573,7 +674,9 @@ export class Space extends Array {
 
             let resizable = !mw.fullscreen && !isMaximized(mw);
 
-            if (mw.preferredWidth) {
+            // Proportional focus owns widths (1 / 95%+5% / 5%|90%|5%);
+            // skip preferredWidth so the catch-all 90% winprop cannot force 90% on 2-col.
+            if (mw.preferredWidth && !ProportionalFocus.ENABLED) {
                 let prop = mw.preferredWidth;
                 if (prop.value <= 0) {
                     console.warn("invalid preferredWidth value");
@@ -664,7 +767,9 @@ export class Space extends Array {
 
         let time = Settings.prefs.animation_time;
         let gap = Settings.prefs.window_gap;
-        let x = gap; // init (ensures autostart apps in particular start properly gapped)
+        // Proportional edge focus needs x=0 so the edge-side gap can be cut
+        // off cleanly; peek-side gap is preserved via width + cloneClip.
+        let x = ProportionalFocus.ENABLED ? 0 : gap;
         let selectedIndex = this.selectedIndex();
         let workArea = this.workArea();
 
@@ -733,6 +838,21 @@ export class Space extends Array {
                 targetWidth = Math.max(...column.map(w => {
                     return w?._fullscreen_frame?.tiledWidth ?? w.get_frame_rect().width;
                 }));
+            }
+
+            // Proportional focus: force focused column width
+            // Skip when user resized (Win+R) or fullscreen/maximize (Win+F)
+            if (ProportionalFocus.ENABLED && selectedInColumn &&
+                !shouldSkipProportion(selectedInColumn)) {
+                const nCols = this.length;
+                if (this._proportionNCols !== nCols) {
+                    this._proportionNCols = nCols;
+                    for (const col of this) {
+                        for (const w of col)
+                            delete w._proportionUserOverride;
+                    }
+                }
+                targetWidth = focusTargetWidth(workArea.width, nCols, i);
             }
 
             // enforce minimum
@@ -3629,7 +3749,9 @@ export function allocateClone(metaWindow) {
 
         const rtop = Settings.prefs.selection_border_radius_top;
         const rbottom = Settings.prefs.selection_border_radius_bottom;
-        selection.style = `border-radius: ${rtop}px ${rtop}px ${rbottom}px ${rbottom}px`;
+        // Inline border so unlock theme-reload can't fall back to Zorin's 1px .tile-preview
+        const bw = Settings.prefs.selection_border_size || 4;
+        selection.style = `border: ${bw}px solid ${selectionColor}; background-color: rgba(0,0,0,0); border-radius: ${rtop}px ${rtop}px ${rbottom}px ${rbottom}px`;
     }
 }
 
@@ -4288,6 +4410,48 @@ export function animateDown(metaWindow) {
     });
 }
 
+/**
+ * Resize focused column window for proportional focus layout.
+ * 1 col -> gutters; edge -> 95% (absorb empty side); middle -> 90%.
+ */
+export function applyProportionFocusLayout(space, metaWindow) {
+    if (!ProportionalFocus.ENABLED || _proportionLayoutLock || !metaWindow)
+        return false;
+    if (shouldSkipProportion(metaWindow))
+        return false;
+
+    const n = space.length;
+    const index = space.indexOf(metaWindow);
+    const workArea = space.workArea();
+    if (!workArea.width || index < 0)
+        return false;
+
+    const targetWidth = focusTargetWidth(workArea.width, n, index);
+
+    const frame = metaWindow.get_frame_rect();
+    if (Math.abs(frame.width - targetWidth) <= 3)
+        return false;
+
+    _proportionLayoutLock = true;
+    try {
+        // Keep current y/height; PaperWM layout will verticalize as needed
+        metaWindow.move_resize_frame(
+            true,
+            frame.x,
+            frame.y,
+            targetWidth,
+            frame.height
+        );
+    } finally {
+        // Unlock on next event loop tick so resize notify can settle
+        GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+            _proportionLayoutLock = false;
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+    return true;
+}
+
 export function ensuredX(meta_window, space) {
     let index = space.indexOf(meta_window);
     let last = space.selectedWindow;
@@ -4306,6 +4470,23 @@ export function ensuredX(meta_window, space) {
     let workArea = space.workArea();
     let min = workArea.x;
     let max = min + workArea.width;
+
+    // Custom proportional focus viewport:
+    // edge → flush on that side only; peek side keeps gutter; middle → centered
+    if (ProportionalFocus.ENABLED && !meta_window.fullscreen) {
+        const n = space.length;
+        const peek = Math.round(workArea.width * ProportionalFocus.PEEK);
+        const side = singleWindowSideInset();
+        const gap = Settings.prefs.window_gap || 0;
+        applyPeekSideClip(space, index, n);
+        if (n <= 1)                 // single: centered, side gaps both sides
+            return min + Math.round((workArea.width - frame.width) / 2);
+        if (index === 0)            // leftmost: side gap on the left, next window peeks right
+            return min + side;
+        if (index === n - 1)        // rightmost: side gap on the right, previous peeks left
+            return max - side - frame.width;
+        return min + peek + gap;    // middle: 5% peek + gap on both sides
+    }
 
     if (space.focusMode === FocusModes.CENTER) {
         // window switching should centre focus
@@ -4368,6 +4549,11 @@ export function ensureViewport(meta_window, space, options = {}) {
         !meta_window.fullscreen) {
         animateDown(space.selectedWindow);
     }
+
+    // Proportional focus widths before measuring position
+    applyProportionFocusLayout(space, meta_window);
+    applyPeekSideClip(space, space.indexOf(meta_window), space.length);
+
     let x = ensuredX(meta_window, space);
 
     space.selectedWindow = meta_window;
@@ -4793,6 +4979,8 @@ export function isWindowAnimating(metaWindow) {
 
 export function toggleMaximizeHorizontally(metaWindow) {
     metaWindow = metaWindow || display.focus_window;
+    if (metaWindow)
+        metaWindow._proportionUserOverride = true;
 
     if (isMaximized(metaWindow)) {
         // ASSUMPTION: MaximizeFlags.HORIZONTALLY is not used
@@ -4872,6 +5060,8 @@ export function resizeHDec(metaWindow) {
 
 export function resizeWInc(metaWindow) {
     metaWindow = metaWindow || display.focus_window;
+    if (metaWindow)
+        metaWindow._proportionUserOverride = true;
     let frame = metaWindow.get_frame_rect();
     let space = spaces.spaceOfWindow(metaWindow);
     let workArea = space.workArea();
@@ -4892,6 +5082,8 @@ export function resizeWInc(metaWindow) {
 
 export function resizeWDec(metaWindow) {
     metaWindow = metaWindow || display.focus_window;
+    if (metaWindow)
+        metaWindow._proportionUserOverride = true;
     let frame = metaWindow.get_frame_rect();
     let space = spaces.spaceOfWindow(metaWindow);
     let workArea = space.workArea();
@@ -4960,6 +5152,9 @@ export function cycleWindowWidthDirection(metaWindow, direction) {
     if (isMaximized(metaWindow)) {
         unmaximize(metaWindow, Meta.MaximizeFlags.BOTH);
     }
+
+    // Win+R: keep this size; don't let proportional layout snap it back
+    metaWindow._proportionUserOverride = true;
 
     // Space.layout will ensure the window is moved if necessary
     metaWindow.move_resize_frame(true, targetX, frame.y, targetWidth, frame.height);
