@@ -77,7 +77,7 @@ gnome-extensions prefs paperwm-niri@hamidxgh.github.com
 |---|---|
 | Gaps, margins, animation speed, keybindings, app rules | Extension settings (command above) |
 | Focus border colour | `~/.config/paperwm/selection-color` (e.g. `#7aa2f7`) |
-| Border width and corner radius | Extension settings → *Border | Gaps | Margins* |
+| Border width and corner radius | Extension settings → *Border \| Gaps \| Margins* |
 | Extra styling | `~/.config/paperwm/user.css` |
 | Peek size (default 5%) | `PEEK` in `ProportionalFocus` at the top of `tiling.js` |
 
