@@ -597,7 +597,7 @@ export let Easer = {
         }
 
         if (!params.mode) {
-            params.mode = Clutter.AnimationMode.EASE_IN_OUT_QUAD;
+            params.mode = Clutter.AnimationMode.EASE_IN_OUT_CUBIC;
         }
 
         actor.ease(params);
