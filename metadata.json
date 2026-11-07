@@ -1,9 +1,16 @@
 {
-  "uuid": "paperwm@paperwm.github.com",
-  "name": "PaperWM",
-  "description": "Tiling window manager with a twist",
-  "url": "https://github.com/paperwm/PaperWM",
+  "uuid": "paperwm-niri@hamidxgh.github.com",
+  "name": "PaperWM Niri",
+  "description": "PaperWM fork with a niri/Omarchy-style scrolling layout: focused window centred with 5% neighbour peeks, gaps always visible, theme-following focus border.",
+  "url": "https://github.com/hamidxgh/paperwm-niri",
   "settings-schema": "org.gnome.shell.extensions.paperwm",
-  "shell-version": [ "45", "46", "47", "48", "49", "50" ],
-  "version-name": "50.0.1"
+  "shell-version": [
+    "45",
+    "46",
+    "47",
+    "48",
+    "49",
+    "50"
+  ],
+  "version-name": "50.0.1-niri.1"
 }

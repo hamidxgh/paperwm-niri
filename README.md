@@ -1,3 +1,45 @@
+# PaperWM Niri
+
+A fork of [PaperWM](https://github.com/paperwm/PaperWM) with a **niri / Omarchy-style scrolling layout** for GNOME (45–50, X11 and Wayland).
+
+| Situation | Layout |
+|---|---|
+| One window | full width, gaps on every side |
+| Leftmost / rightmost window focused | edge gap · window (~94%) · gap · 5% of the neighbour |
+| Middle window focused | 5% peek · gap · window (~89%, centred) · gap · 5% peek |
+| Maximized / fullscreen / manually resized | left alone |
+
+Also included:
+- Focus border colour follows your theme: write a hex colour to `~/.config/paperwm/selection-color` and it updates live.
+- Moving a window past the strip edge (move-left/right) sends it to the neighbouring monitor.
+- `user.css` survives screen unlock / shell theme changes (no top-bar freeze).
+- Smoother (cubic) animations.
+
+## Install
+
+```bash
+git clone https://github.com/hamidxgh/paperwm-niri
+cd paperwm-niri
+./install.sh
+```
+
+Then restart GNOME Shell (X11: Alt+F2 → `r`; Wayland: log out and in).
+It uses the same settings as PaperWM, so an existing PaperWM setup carries over; the installer disables the original PaperWM because the two can't run together.
+Installing under its own ID means GNOME Extensions updates never overwrite it.
+
+## Updating from upstream PaperWM
+
+```bash
+git remote add upstream https://github.com/paperwm/PaperWM   # once
+git fetch upstream --tags
+git merge v50.0.2        # or whichever release tag
+./install.sh
+```
+
+---
+
+*Original PaperWM README below.*
+
 # PaperWM #
 
 [![project chat](https://img.shields.io/badge/PaperWM_Discussions-join_chat-brightgreen)](https://github.com/paperwm/PaperWM/discussions)
