@@ -20,6 +20,7 @@ Works on GNOME 45 – 50, on both X11 and Wayland. No root needed.
 - **Niri-style focus layout.** One window gets full width; with several, the focused window takes the screen and the neighbours peek 5% on each side. Edge windows grow into the empty side. Gaps stay visible on every screen edge.
 - **Your sizes win.** Maximized, fullscreen and manually resized (Super+R, etc.) windows are left alone.
 - **Focus border follows your theme.** Write a hex colour to `~/.config/paperwm/selection-color` and the border updates live. This is handy for theme switchers.
+- **Drag-and-drop scrolling.** Drag a file, link or text onto a peeking window, or to the screen edge, and after a moment it scrolls into view so you can drop there. Keep hovering to keep stepping, like macOS spring-loading. The window you drop on becomes active.
 - **Move across monitors.** Moving a window past the end of the strip sends it to the neighbouring monitor.
 - **Stable styling.** `~/.config/paperwm/user.css` is re-applied after screen unlock and shell-theme changes, without freezing the top bar.
 - **Smoother animations** (cubic easing).
