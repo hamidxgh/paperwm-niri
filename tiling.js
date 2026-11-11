@@ -186,6 +186,12 @@ export let inGrab;
 export function enable(extension) {
     inGrab = false;
 
+    // Each monitor shows its own workspace under PaperWM, but GNOME (and extensions such as
+    // dash-to-panel / Zorin Taskbar intellihide) only consider the "active" one. Expose the
+    // workspaces currently on screen so they can take every monitor into account.
+    globalThis.paperwmVisibleWorkspaces = () =>
+        spaces ? [...new Set([...spaces.monitors.values()].map(s => s.workspace))] : [];
+
     displayConfig = new Utils.DisplayConfig();
     saveState = saveState ?? new SaveState();
 
@@ -304,6 +310,7 @@ export function enable(extension) {
 }
 
 export function disable() {
+    delete globalThis.paperwmVisibleWorkspaces;
     selectionColorMonitor?.cancel();
     selectionColorMonitor = null;
     Utils.timeout_remove(startupTimeoutId);
