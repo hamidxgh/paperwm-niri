@@ -5,7 +5,6 @@ import Shell from 'gi://Shell';
 import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
-import * as PointerWatcher from 'resource:///org/gnome/shell/ui/pointerWatcher.js';
 
 import { Settings, Utils, Tiling, Grab, Scratch } from './imports.js';
 
@@ -69,7 +68,7 @@ export function multimonitorSupport() {
 }
 
 export function enableMultimonitorSupport() {
-    pointerWatch = PointerWatcher.getPointerWatcher().addWatch(100,
+    pointerWatch = Utils.addPointerWatch(100,
         () => {
             // if overview return
             if (Main.overview.visible) {
@@ -282,7 +281,7 @@ export class StackOverlay {
 
         // create pointerwatcher to ensure preview is removed
         previewPointerWatcher?.remove();
-        previewPointerWatcher = PointerWatcher.getPointerWatcher().addWatch(200, () => {
+        previewPointerWatcher = Utils.addPointerWatch(200, () => {
             if (!this._pointerIsAtEdge()) {
                 this.removePreview();
                 previewPointerWatcher?.remove();

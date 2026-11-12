@@ -8,6 +8,7 @@ import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as Ripples from 'resource:///org/gnome/shell/ui/ripples.js';
+import * as PointerWatcher from 'resource:///org/gnome/shell/ui/pointerWatcher.js';
 import * as Config from 'resource:///org/gnome/shell/misc/config.js';
 
 import { Lib } from './imports.js';
@@ -704,4 +705,33 @@ export class DisplayConfig {
     get gnomeMonitors() {
         return Main.layoutManager.monitors;
     }
+}
+
+/**
+ * Register a GNOME PointerWatcher watch that other extensions can't break.
+ *
+ * GNOME's addWatch() first runs every already-registered watch synchronously, and its timer
+ * stops at the first watch that throws. A stale watch from another extension (e.g. Zorin
+ * Taskbar / dash-to-panel after a panel reset) would then throw inside our enable() — GNOME
+ * marks PaperWM as errored — and starve every watch registered after it.
+ * So: make the initial run a no-op, put our watch first, and never let our callback throw.
+ */
+export function addPointerWatch(interval, callback) {
+    const watcher = PointerWatcher.getPointerWatcher();
+    const [x, y] = global.get_pointer();
+    watcher.pointerX = x;
+    watcher.pointerY = y;
+    const watch = watcher.addWatch(interval, (px, py) => {
+        try {
+            callback(px, py);
+        } catch (e) {
+            console.error('PaperWM pointer watch failed', e);
+        }
+    });
+    const i = watcher._watches?.indexOf(watch) ?? -1;
+    if (i > 0) {
+        watcher._watches.splice(i, 1);
+        watcher._watches.unshift(watch);
+    }
+    return watch;
 }

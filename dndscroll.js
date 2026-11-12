@@ -13,7 +13,6 @@ import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
-import * as PointerWatcher from 'resource:///org/gnome/shell/ui/pointerWatcher.js';
 
 import { Tiling, Utils } from './imports.js';
 
@@ -32,7 +31,7 @@ let releaseId = 0;
 let landed = null;  // window the drag scrolled to; focused when the button is released
 
 export function enable() {
-    watch = PointerWatcher.getPointerWatcher().addWatch(POLL_MS, (x, y) => evaluate(x, y));
+    watch = Utils.addPointerWatch(POLL_MS, (x, y) => evaluate(x, y));
 }
 
 export function disable() {
