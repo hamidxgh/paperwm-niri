@@ -1,9 +1,9 @@
 /**
  * Window open/close animations (PaperWM Niri).
  *
- *   open : slides in from the right with Hyprland/Omarchy's easeOutQuint curve (330 ms) and a
- *          quick fade-in (140 ms), the timings Omarchy ships in looknfeel.lua (windowsIn 3.28,
- *          fadeIn 1.38, in tenths of a second).
+ *   open : grows from 75% width (92% height) to full size, anchored on its right edge, with
+ *          Hyprland/Omarchy's easeOutQuint curve (330 ms) and a quick fade-in (140 ms): the
+ *          timings Omarchy ships in looknfeel.lua (windowsIn 3.28, fadeIn 1.38).
  *   close: sinks ~140 px downward while fading out (260 ms, ease-in).
  *
  * Only NORMAL windows are affected; dialogs, menus and minimize effects keep GNOME's defaults.
@@ -19,9 +19,10 @@ import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
-const OPEN_MS = 330;        // slide duration (Omarchy windowsIn: 328 ms)
-const FADE_IN_MS = 140;     // fade duration  (Omarchy fadeIn: 138 ms)
-const OPEN_OFFSET_X = 160;  // starts this far to the right
+const OPEN_MS = 330;        // grow duration (Omarchy windowsIn: 328 ms)
+const FADE_IN_MS = 140;     // fade duration (Omarchy fadeIn: 138 ms)
+const START_SCALE_X = 0.75; // starts at 75% width…
+const START_SCALE_Y = 0.92; // …and 92% height, anchored on its right edge
 const CLOSE_MS = 260;
 const CLOSE_OFFSET_Y = 140;
 
@@ -38,7 +39,7 @@ const easeOutQuint = t => 1 - Math.pow(1 - t, 5);
 const easeOutQuad = t => 1 - (1 - t) * (1 - t);
 
 /**
- * Slide an actor (window actor or PaperWM clone) in from the right.
+ * Grow an actor (window actor or PaperWM clone) into place from its right edge.
  * Clutter skips transitions on unmapped actors, and PaperWM keeps new windows hidden until it
  * has placed them, so the motion starts when the actor actually appears. Actors that share a
  * `startTime` (a window's clone and its real actor) stay in sync even if they appear at different
@@ -47,24 +48,36 @@ const easeOutQuad = t => 1 - (1 - t) * (1 - t);
 export function slideIn(actor, startTime = GLib.get_monotonic_time()) {
     if (!actor || !animationsEnabled())
         return;
-    actor.remove_transition('translation-x');
+    actor.remove_transition('scale-x');
+    actor.remove_transition('scale-y');
     actor.remove_transition('opacity');
-    actor.translation_x = OPEN_OFFSET_X;
+    actor.set_pivot_point(1.0, 0.5);          // right edge, vertical centre
+    actor.scale_x = START_SCALE_X;
+    actor.scale_y = START_SCALE_Y;
     actor.opacity = 0;
+
+    const finish = () => {
+        actor.scale_x = 1;
+        actor.scale_y = 1;
+        actor.set_pivot_point(0, 0);
+    };
 
     const run = () => {
         const elapsed = Math.max(0, (GLib.get_monotonic_time() - startTime) / 1000);
 
         if (elapsed < OPEN_MS) {
-            actor.translation_x = OPEN_OFFSET_X * (1 - easeOutQuint(elapsed / OPEN_MS));
+            const p = easeOutQuint(elapsed / OPEN_MS);
+            actor.scale_x = START_SCALE_X + (1 - START_SCALE_X) * p;
+            actor.scale_y = START_SCALE_Y + (1 - START_SCALE_Y) * p;
             actor.ease({
-                translation_x: 0,
+                scale_x: 1,
+                scale_y: 1,
                 duration: OPEN_MS - elapsed,
                 mode: Clutter.AnimationMode.EASE_OUT_QUINT,
-                onStopped: () => { actor.translation_x = 0; },
+                onStopped: finish,
             });
         } else {
-            actor.translation_x = 0;
+            finish();
         }
 
         if (elapsed < FADE_IN_MS) {
