@@ -3,7 +3,8 @@
  *
  *   open : grows smoothly from 10% width (90% height) to full size, anchored on its right edge,
  *          starting once the app has painted (ease-out cubic, 450 ms, 220 ms fade-in).
- *   close: the reverse — shrinks toward its right edge while fading out (ease-in, 260 ms).
+ *   close: shrinks horizontally, left edge sweeping to the right edge (height unchanged,
+ *          350 ms ease-in-out), fading out only near the end.
  *
  * Only NORMAL windows are affected; dialogs, menus and minimize effects keep GNOME's defaults.
  * GNOME's own `map`/`destroy` handlers are blocked and replaced by ours, which reuse GNOME's
@@ -22,7 +23,8 @@ const OPEN_MS = 450;        // grow duration
 const FADE_IN_MS = 220;     // fade-in duration
 const START_SCALE_X = 0.1;  // opens at 10% width…
 const START_SCALE_Y = 0.9;  // …and 90% height, anchored on its right edge
-const CLOSE_MS = 260;       // shrink duration (reverse of opening)
+const CLOSE_MS = 350;       // shrink duration: left edge sweeps to the right edge
+const CLOSE_FADE_DELAY_MS = 170;  // stay visible while shrinking, fade out at the end
 const FIRST_FRAME_WAIT_MS = 300;  // start anyway if the app hasn't painted by then
 
 let blocked = [];
@@ -168,14 +170,18 @@ function onDestroy(shellwm, actor) {
     wm._destroying.add(actor);
     actor.remove_all_transitions();
     actor._paperwmGrowToken = (actor._paperwmGrowToken ?? 0) + 1;   // cancel a pending grow
-    actor.set_pivot_point(1.0, 0.5);          // shrink back toward the right edge
+    actor.set_pivot_point(1.0, 0.5);          // shrink toward the right edge (left → right)
     actor.ease({
         scale_x: START_SCALE_X,
-        scale_y: START_SCALE_Y,
-        opacity: 0,
         duration: CLOSE_MS,
-        mode: Clutter.AnimationMode.EASE_IN_CUBIC,
+        mode: Clutter.AnimationMode.EASE_IN_OUT_CUBIC,
         onStopped: () => wm._destroyWindowDone(shellwm, actor),
+    });
+    actor.ease({
+        opacity: 0,
+        delay: CLOSE_FADE_DELAY_MS,
+        duration: CLOSE_MS - CLOSE_FADE_DELAY_MS,
+        mode: Clutter.AnimationMode.EASE_IN_QUAD,
     });
 }
 
