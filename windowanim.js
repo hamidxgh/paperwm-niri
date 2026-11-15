@@ -155,6 +155,23 @@ function onMap(shellwm, actor) {
     slideIn(actor, null, { waitFirstFrame: true });
 }
 
+/** Shrink an actor toward its right edge (left → right), fading out only near the end. */
+function shrinkOut(target, done) {
+    target.set_pivot_point(1.0, 0.5);
+    target.ease({
+        scale_x: START_SCALE_X,
+        duration: CLOSE_MS,
+        mode: Clutter.AnimationMode.EASE_IN_OUT_CUBIC,
+        onStopped: done,
+    });
+    target.ease({
+        opacity: 0,
+        delay: CLOSE_FADE_DELAY_MS,
+        duration: CLOSE_MS - CLOSE_FADE_DELAY_MS,
+        mode: Clutter.AnimationMode.EASE_IN_QUAD,
+    });
+}
+
 function onDestroy(shellwm, actor) {
     const wm = Main.wm;
     if (!isNormal(actor) || !animationsEnabled() ||
@@ -170,18 +187,21 @@ function onDestroy(shellwm, actor) {
     wm._destroying.add(actor);
     actor.remove_all_transitions();
     actor._paperwmGrowToken = (actor._paperwmGrowToken ?? 0) + 1;   // cancel a pending grow
-    actor.set_pivot_point(1.0, 0.5);          // shrink toward the right edge (left → right)
-    actor.ease({
-        scale_x: START_SCALE_X,
-        duration: CLOSE_MS,
-        mode: Clutter.AnimationMode.EASE_IN_OUT_CUBIC,
-        onStopped: () => wm._destroyWindowDone(shellwm, actor),
-    });
-    actor.ease({
-        opacity: 0,
-        delay: CLOSE_FADE_DELAY_MS,
-        duration: CLOSE_MS - CLOSE_FADE_DELAY_MS,
-        mode: Clutter.AnimationMode.EASE_IN_QUAD,
+    // While Super is held, PaperWM shows windows through clones and hides the real actors, then
+    // drops the clone as soon as the window is gone. Animate a live copy in the clone's place.
+    const clone = window.clone;
+    let target = actor;
+    let ghost = null;
+    if (!actor.visible && clone?.visible && clone.get_parent()) {
+        ghost = new Clutter.Clone({ source: actor });
+        clone.get_parent().add_child(ghost);
+        const inner = clone.cloneActor;
+        ghost.set_position(clone.x + (inner?.x ?? 0), clone.y + (inner?.y ?? 0));
+        target = ghost;
+    }
+    shrinkOut(target, () => {
+        ghost?.destroy();
+        wm._destroyWindowDone(shellwm, actor);
     });
 }
 
