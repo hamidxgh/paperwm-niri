@@ -10,7 +10,7 @@ import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 import {
-    Settings, Utils, Lib, Gestures, Navigator, Grab, Topbar, Scratch, Stackoverlay, Background
+    Settings, Utils, Lib, Gestures, Navigator, Grab, Topbar, Scratch, Stackoverlay, Background, WindowAnim
 } from './imports.js';
 import { Easer, DispatcherMode } from './utils.js';
 import { ClickOverlay } from './stackoverlay.js';
@@ -4334,6 +4334,8 @@ Opening "${metaWindow?.title}" on current space.`);
     if (!existing) {
         clone.x = clone.targetX;
         clone.y = clone.targetY;
+        // PaperWM shows new tiled windows through their clone: give it the same rise-in animation
+        WindowAnim.slideIn(clone);
         space.layout();
 
         // run focus and resize to ensure new window is correctly shown

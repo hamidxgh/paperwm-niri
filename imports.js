@@ -18,3 +18,4 @@ export * as Utils from './utils.js';
 export * as Workspace from './workspace.js';
 export * as OverviewLayout from './overviewlayout.js';
 export * as DndScroll from './dndscroll.js';
+export * as WindowAnim from './windowanim.js';
