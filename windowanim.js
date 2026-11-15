@@ -1,7 +1,7 @@
 /**
  * Window open/close animations (PaperWM Niri).
  *
- *   open : grows smoothly from 60% width (90% height) to full size, anchored on its right edge,
+ *   open : grows smoothly from 10% width (90% height) to full size, anchored on its right edge,
  *          starting once the app has painted (ease-out cubic, 450 ms, 220 ms fade-in).
  *   close: the reverse — shrinks toward its right edge while fading out (ease-in, 260 ms).
  *
@@ -20,7 +20,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 const OPEN_MS = 450;        // grow duration
 const FADE_IN_MS = 220;     // fade-in duration
-const START_SCALE_X = 0.6;  // opens at 60% width…
+const START_SCALE_X = 0.1;  // opens at 10% width…
 const START_SCALE_Y = 0.9;  // …and 90% height, anchored on its right edge
 const CLOSE_MS = 260;       // shrink duration (reverse of opening)
 const FIRST_FRAME_WAIT_MS = 300;  // start anyway if the app hasn't painted by then
