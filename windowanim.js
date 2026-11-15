@@ -1,8 +1,8 @@
 /**
  * elementary-OS-style window open/close animations (PaperWM Niri).
  *
- *   open : the window rises ~60 px from below while fading in   (ease-out)
- *   close: the window sinks ~60 px downward while fading out    (ease-in)
+ *   open : the window rises ~140 px from below while fading in  (ease-out)
+ *   close: the window sinks ~140 px downward while fading out   (ease-in)
  *
  * Only NORMAL windows are affected; dialogs, menus and minimize effects keep GNOME's defaults.
  * GNOME's own `map`/`destroy` handlers are blocked and replaced by ours, which reuse GNOME's
@@ -10,15 +10,16 @@
  * Respects the system "Animations" switch.
  */
 import Clutter from 'gi://Clutter';
+import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import Meta from 'gi://Meta';
 import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
-const OPEN_MS = 300;
-const CLOSE_MS = 220;
-const OFFSET = 60;
+const OPEN_MS = 450;
+const CLOSE_MS = 260;
+const OFFSET = 140;
 
 let blocked = [];
 let connected = [];
@@ -28,23 +29,55 @@ function animationsEnabled() {
     return St.Settings.get().enable_animations;
 }
 
-/** Animate any actor (window actor or PaperWM clone) rising into place. */
-export function slideIn(actor) {
+const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+
+/**
+ * Animate an actor (window actor or PaperWM clone) rising into place.
+ * Clutter skips transitions on unmapped actors, and PaperWM keeps new windows hidden until it
+ * has placed them, so the motion starts when the actor actually appears. Actors that share a
+ * `startTime` (a window's clone and its real actor) stay in sync even if they appear at different
+ * moments: a late one joins the motion where it already is.
+ */
+export function slideIn(actor, startTime = GLib.get_monotonic_time()) {
     if (!actor || !animationsEnabled())
         return;
     actor.remove_transition('translation-y');
+    actor.remove_transition('opacity');
     actor.translation_y = OFFSET;
     actor.opacity = 0;
-    actor.ease({
-        translation_y: 0,
-        opacity: 255,
-        duration: OPEN_MS,
-        mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
-        onStopped: () => {
+
+    const run = () => {
+        const elapsed = (GLib.get_monotonic_time() - startTime) / 1000;
+        if (elapsed >= OPEN_MS) {
             actor.translation_y = 0;
             actor.opacity = 255;
-        },
-    });
+            return;
+        }
+        const p = easeOutCubic(Math.max(0, elapsed) / OPEN_MS);
+        actor.translation_y = OFFSET * (1 - p);
+        actor.opacity = Math.round(255 * p);
+        actor.ease({
+            translation_y: 0,
+            opacity: 255,
+            duration: OPEN_MS - elapsed,
+            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            onStopped: () => {
+                actor.translation_y = 0;
+                actor.opacity = 255;
+            },
+        });
+    };
+
+    if (actor.mapped) {
+        run();
+    } else {
+        const id = actor.connect('notify::mapped', () => {
+            if (!actor.mapped)
+                return;
+            actor.disconnect(id);
+            run();
+        });
+    }
 }
 
 function isNormal(actor) {

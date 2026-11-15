@@ -4334,8 +4334,11 @@ Opening "${metaWindow?.title}" on current space.`);
     if (!existing) {
         clone.x = clone.targetX;
         clone.y = clone.targetY;
-        // PaperWM shows new tiled windows through their clone: give it the same rise-in animation
-        WindowAnim.slideIn(clone);
+        // PaperWM shows new tiled windows through their clone, then swaps in the real window when
+        // the strip has scrolled: run the same rise-in on both, in sync, so the swap is seamless.
+        const animStart = GLib.get_monotonic_time();
+        WindowAnim.slideIn(clone, animStart);
+        WindowAnim.slideIn(metaWindow.get_compositor_private(), animStart);
         space.layout();
 
         // run focus and resize to ensure new window is correctly shown
