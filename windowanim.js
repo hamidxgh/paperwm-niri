@@ -1,8 +1,10 @@
 /**
- * elementary-OS-style window open/close animations (PaperWM Niri).
+ * Window open/close animations (PaperWM Niri).
  *
- *   open : the window rises ~140 px from below while fading in  (ease-out)
- *   close: the window sinks ~140 px downward while fading out   (ease-in)
+ *   open : slides in from the right with Hyprland/Omarchy's easeOutQuint curve (330 ms) and a
+ *          quick fade-in (140 ms), the timings Omarchy ships in looknfeel.lua (windowsIn 3.28,
+ *          fadeIn 1.38, in tenths of a second).
+ *   close: sinks ~140 px downward while fading out (260 ms, ease-in).
  *
  * Only NORMAL windows are affected; dialogs, menus and minimize effects keep GNOME's defaults.
  * GNOME's own `map`/`destroy` handlers are blocked and replaced by ours, which reuse GNOME's
@@ -17,9 +19,11 @@ import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
-const OPEN_MS = 450;
+const OPEN_MS = 330;        // slide duration (Omarchy windowsIn: 328 ms)
+const FADE_IN_MS = 140;     // fade duration  (Omarchy fadeIn: 138 ms)
+const OPEN_OFFSET_X = 160;  // starts this far to the right
 const CLOSE_MS = 260;
-const OFFSET = 140;
+const CLOSE_OFFSET_Y = 140;
 
 let blocked = [];
 let connected = [];
@@ -29,10 +33,12 @@ function animationsEnabled() {
     return St.Settings.get().enable_animations;
 }
 
-const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+// Omarchy's easeOutQuint is cubic-bezier(0.23, 1, 0.32, 1) ≈ the standard quint ease-out.
+const easeOutQuint = t => 1 - Math.pow(1 - t, 5);
+const easeOutQuad = t => 1 - (1 - t) * (1 - t);
 
 /**
- * Animate an actor (window actor or PaperWM clone) rising into place.
+ * Slide an actor (window actor or PaperWM clone) in from the right.
  * Clutter skips transitions on unmapped actors, and PaperWM keeps new windows hidden until it
  * has placed them, so the motion starts when the actor actually appears. Actors that share a
  * `startTime` (a window's clone and its real actor) stay in sync even if they appear at different
@@ -41,31 +47,37 @@ const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
 export function slideIn(actor, startTime = GLib.get_monotonic_time()) {
     if (!actor || !animationsEnabled())
         return;
-    actor.remove_transition('translation-y');
+    actor.remove_transition('translation-x');
     actor.remove_transition('opacity');
-    actor.translation_y = OFFSET;
+    actor.translation_x = OPEN_OFFSET_X;
     actor.opacity = 0;
 
     const run = () => {
-        const elapsed = (GLib.get_monotonic_time() - startTime) / 1000;
-        if (elapsed >= OPEN_MS) {
-            actor.translation_y = 0;
-            actor.opacity = 255;
-            return;
+        const elapsed = Math.max(0, (GLib.get_monotonic_time() - startTime) / 1000);
+
+        if (elapsed < OPEN_MS) {
+            actor.translation_x = OPEN_OFFSET_X * (1 - easeOutQuint(elapsed / OPEN_MS));
+            actor.ease({
+                translation_x: 0,
+                duration: OPEN_MS - elapsed,
+                mode: Clutter.AnimationMode.EASE_OUT_QUINT,
+                onStopped: () => { actor.translation_x = 0; },
+            });
+        } else {
+            actor.translation_x = 0;
         }
-        const p = easeOutCubic(Math.max(0, elapsed) / OPEN_MS);
-        actor.translation_y = OFFSET * (1 - p);
-        actor.opacity = Math.round(255 * p);
-        actor.ease({
-            translation_y: 0,
-            opacity: 255,
-            duration: OPEN_MS - elapsed,
-            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-            onStopped: () => {
-                actor.translation_y = 0;
-                actor.opacity = 255;
-            },
-        });
+
+        if (elapsed < FADE_IN_MS) {
+            actor.opacity = Math.round(255 * easeOutQuad(elapsed / FADE_IN_MS));
+            actor.ease({
+                opacity: 255,
+                duration: FADE_IN_MS - elapsed,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                onStopped: () => { actor.opacity = 255; },
+            });
+        } else {
+            actor.opacity = 255;
+        }
     };
 
     if (actor.mapped) {
@@ -113,7 +125,7 @@ function onDestroy(shellwm, actor) {
     wm._destroying.add(actor);
     actor.remove_all_transitions();
     actor.ease({
-        translation_y: OFFSET,
+        translation_y: CLOSE_OFFSET_Y,
         opacity: 0,
         duration: CLOSE_MS,
         mode: Clutter.AnimationMode.EASE_IN_CUBIC,
