@@ -1,10 +1,9 @@
 /**
  * Window open/close animations (PaperWM Niri).
  *
- *   open : grows from 75% width (92% height) to full size, anchored on its right edge, with
- *          Hyprland/Omarchy's easeOutQuint curve (330 ms) and a quick fade-in (140 ms): the
- *          timings Omarchy ships in looknfeel.lua (windowsIn 3.28, fadeIn 1.38).
- *   close: sinks ~140 px downward while fading out (260 ms, ease-in).
+ *   open : grows smoothly from 60% width (90% height) to full size, anchored on its right edge,
+ *          starting once the app has painted (ease-out cubic, 450 ms, 220 ms fade-in).
+ *   close: the reverse — shrinks toward its right edge while fading out (ease-in, 260 ms).
  *
  * Only NORMAL windows are affected; dialogs, menus and minimize effects keep GNOME's defaults.
  * GNOME's own `map`/`destroy` handlers are blocked and replaced by ours, which reuse GNOME's
@@ -19,12 +18,12 @@ import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
-const OPEN_MS = 330;        // grow duration (Omarchy windowsIn: 328 ms)
-const FADE_IN_MS = 140;     // fade duration (Omarchy fadeIn: 138 ms)
-const START_SCALE_X = 0.75; // starts at 75% width…
-const START_SCALE_Y = 0.92; // …and 92% height, anchored on its right edge
-const CLOSE_MS = 260;
-const CLOSE_OFFSET_Y = 140;
+const OPEN_MS = 450;        // grow duration
+const FADE_IN_MS = 220;     // fade-in duration
+const START_SCALE_X = 0.6;  // opens at 60% width…
+const START_SCALE_Y = 0.9;  // …and 90% height, anchored on its right edge
+const CLOSE_MS = 260;       // shrink duration (reverse of opening)
+const FIRST_FRAME_WAIT_MS = 300;  // start anyway if the app hasn't painted by then
 
 let blocked = [];
 let connected = [];
@@ -34,8 +33,7 @@ function animationsEnabled() {
     return St.Settings.get().enable_animations;
 }
 
-// Omarchy's easeOutQuint is cubic-bezier(0.23, 1, 0.32, 1) ≈ the standard quint ease-out.
-const easeOutQuint = t => 1 - Math.pow(1 - t, 5);
+const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
 const easeOutQuad = t => 1 - (1 - t) * (1 - t);
 
 /**
@@ -44,10 +42,14 @@ const easeOutQuad = t => 1 - (1 - t) * (1 - t);
  * has placed them, so the motion starts when the actor actually appears. Actors that share a
  * `startTime` (a window's clone and its real actor) stay in sync even if they appear at different
  * moments: a late one joins the motion where it already is.
+ * With `waitFirstFrame`, the grow starts when the app has painted its first frame (apps paint
+ * ~100-150 ms after mapping; starting earlier would hide most of the motion).
  */
-export function slideIn(actor, startTime = GLib.get_monotonic_time()) {
+export function slideIn(actor, startTime = null, { waitFirstFrame = false } = {}) {
     if (!actor || !animationsEnabled())
         return;
+    const token = (actor._paperwmGrowToken ?? 0) + 1;   // newest call wins
+    actor._paperwmGrowToken = token;
     actor.remove_transition('scale-x');
     actor.remove_transition('scale-y');
     actor.remove_transition('opacity');
@@ -63,17 +65,20 @@ export function slideIn(actor, startTime = GLib.get_monotonic_time()) {
     };
 
     const run = () => {
+        if (actor._paperwmGrowToken !== token)
+            return;
+        startTime ??= GLib.get_monotonic_time();
         const elapsed = Math.max(0, (GLib.get_monotonic_time() - startTime) / 1000);
 
         if (elapsed < OPEN_MS) {
-            const p = easeOutQuint(elapsed / OPEN_MS);
+            const p = easeOutCubic(elapsed / OPEN_MS);
             actor.scale_x = START_SCALE_X + (1 - START_SCALE_X) * p;
             actor.scale_y = START_SCALE_Y + (1 - START_SCALE_Y) * p;
             actor.ease({
                 scale_x: 1,
                 scale_y: 1,
                 duration: OPEN_MS - elapsed,
-                mode: Clutter.AnimationMode.EASE_OUT_QUINT,
+                mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
                 onStopped: finish,
             });
         } else {
@@ -93,16 +98,41 @@ export function slideIn(actor, startTime = GLib.get_monotonic_time()) {
         }
     };
 
-    if (actor.mapped) {
-        run();
-    } else {
+    const whenMapped = () => {
+        if (actor.mapped) {
+            run();
+            return;
+        }
         const id = actor.connect('notify::mapped', () => {
             if (!actor.mapped)
                 return;
             actor.disconnect(id);
             run();
         });
+    };
+
+    if (!waitFirstFrame) {
+        whenMapped();
+        return;
     }
+    let started = false;
+    const start = () => {
+        if (started)
+            return;
+        started = true;
+        whenMapped();
+    };
+    const ffId = actor.connect('first-frame', () => {
+        actor.disconnect(ffId);
+        start();
+    });
+    GLib.timeout_add(GLib.PRIORITY_DEFAULT, FIRST_FRAME_WAIT_MS, () => {
+        if (!started) {
+            try { actor.disconnect(ffId); } catch (_e) { /* already disconnected */ }
+            start();
+        }
+        return GLib.SOURCE_REMOVE;
+    });
 }
 
 function isNormal(actor) {
@@ -120,7 +150,7 @@ function onMap(shellwm, actor) {
     wm._mapWindow(shellwm, actor);
     delete actor._paperwmCustomAnim;
     actor.show();
-    slideIn(actor);
+    slideIn(actor, null, { waitFirstFrame: true });
 }
 
 function onDestroy(shellwm, actor) {
@@ -137,8 +167,11 @@ function onDestroy(shellwm, actor) {
 
     wm._destroying.add(actor);
     actor.remove_all_transitions();
+    actor._paperwmGrowToken = (actor._paperwmGrowToken ?? 0) + 1;   // cancel a pending grow
+    actor.set_pivot_point(1.0, 0.5);          // shrink back toward the right edge
     actor.ease({
-        translation_y: CLOSE_OFFSET_Y,
+        scale_x: START_SCALE_X,
+        scale_y: START_SCALE_Y,
         opacity: 0,
         duration: CLOSE_MS,
         mode: Clutter.AnimationMode.EASE_IN_CUBIC,

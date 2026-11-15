@@ -23,7 +23,7 @@ Works on GNOME 45 – 50, on both X11 and Wayland. No root needed.
 - **Drag-and-drop scrolling.** Drag a file, link or text onto a peeking window, or to the screen edge, and after a moment it scrolls into view so you can drop there. Keep hovering to keep stepping, like macOS spring-loading. The window you drop on becomes active.
 - **Move across monitors.** Moving a window past the end of the strip sends it to the neighbouring monitor.
 - **Stable styling.** `~/.config/paperwm/user.css` is re-applied after screen unlock and shell-theme changes, without freezing the top bar.
-- **Hyprland/Omarchy-style window animations**: new windows grow from narrow to full size anchored on their right edge, with Omarchy's easeOutQuint curve (330 ms) and a quick 140 ms fade; closing windows sink and fade out. Dialogs and menus keep GNOME's defaults, and it follows the system *Animations* switch.
+- **Grow/shrink window animations**: a new window grows smoothly from narrow to full size, anchored on its right edge, starting once the app has painted (450 ms ease-out, quick fade-in); closing reverses it, shrinking toward the right edge while fading out. Dialogs and menus keep GNOME's defaults, and it follows the system *Animations* switch.
 - **Smoother animations** (cubic easing).
 - Plus everything PaperWM already has: scratch layer, window stacking, touchpad gestures, per-app rules, and per-workspace settings.
 
