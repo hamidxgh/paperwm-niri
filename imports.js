@@ -19,3 +19,4 @@ export * as Workspace from './workspace.js';
 export * as OverviewLayout from './overviewlayout.js';
 export * as DndScroll from './dndscroll.js';
 export * as DebugDump from './debugdump.js';
+export * as Resync from './resync.js';
