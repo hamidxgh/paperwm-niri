@@ -63,13 +63,9 @@ export const ProportionalFocus = {
 
 /** Side inset for single-window mode (left+right gutters). */
 function singleWindowSideInset() {
-    // Match vertical gutters; never collapse to 0
-    return Math.max(
-        Settings.prefs.horizontal_margin || 0,
-        Settings.prefs.vertical_margin || 0,
-        Settings.prefs.window_gap || 0,
-        6
-    );
+    // Screen-edge gap = the margin setting (like Hyprland's gaps_out), independent of the gap
+    // between windows (gaps_in), so top, bottom, left and right edges all match.
+    return Math.max(Settings.prefs.horizontal_margin || 0, 6);
 }
 
 /**

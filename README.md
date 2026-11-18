@@ -77,7 +77,7 @@ gnome-extensions prefs paperwm-niri@hamidxgh.github.com
 
 | What | Where |
 |---|---|
-| Gaps, margins, animation speed, keybindings, app rules | Extension settings (command above) |
+| Gaps (edge = margins, between windows = window gap; default here 10 px like Omarchy), animation speed, keybindings, app rules | Extension settings (command above) |
 | Focus border colour | `~/.config/paperwm/selection-color` (e.g. `#7aa2f7`) |
 | Border width and corner radius | Extension settings → *Border \| Gaps \| Margins* |
 | Extra styling | `~/.config/paperwm/user.css` |
