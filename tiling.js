@@ -4050,6 +4050,20 @@ function callbackOnActorShow(actor, callback) {
     signals.connectOneShot(actor, 'show', callback);
 }
 
+/** PaperWM Niri: fit a floating window inside a monitor's work area and centre it there. */
+function centreOnMonitor(metaWindow, monitor) {
+    if (!monitor)
+        return;
+    const wa = Main.layoutManager.getWorkAreaForMonitor(monitor.index);
+    const f = metaWindow.get_frame_rect();
+    const width = Math.min(f.width, Math.floor(wa.width * 0.9));
+    const height = Math.min(f.height, Math.floor(wa.height * 0.9));
+    metaWindow.move_resize_frame(true,
+        wa.x + Math.round((wa.width - width) / 2),
+        wa.y + Math.round((wa.height - height) / 2),
+        width, height);
+}
+
 /**
    Types of windows which never should be tiled.
  */
@@ -4190,9 +4204,25 @@ export function insertWindow(metaWindow, options = {}) {
             }
         }
 
+        // PaperWM Niri: dialogs with no parent window (Qt save/open dialogs such as Flameshot's) and
+        // windows that open "always on top" (picture-in-picture). Qt centres them on the whole X
+        // screen, i.e. split across two monitors, and they belong to one monitor's workspace, so the
+        // moment the pointer crosses to the other monitor they are hidden. Float them (visible on
+        // every workspace) and centre them on the monitor under the pointer.
+        const parentlessDialog = !metaWindow.get_transient_for() &&
+            [Meta.WindowType.DIALOG, Meta.WindowType.MODAL_DIALOG].includes(metaWindow.get_window_type());
+        let centreOnPointerMonitor = false;
+        if (!addToScratch && !metaWindow.fullscreen && (parentlessDialog || metaWindow.is_above())) {
+            addToScratch = true;
+            centreOnPointerMonitor = true;
+            metaWindow.focusOnOpen = true;
+        }
+
         if (addToScratch) {
             connectSizeChanged();
             Scratch.makeScratch(metaWindow);
+            if (centreOnPointerMonitor)
+                centreOnMonitor(metaWindow, Utils.monitorAtCurrentPoint());
             activateWindowAfterRendered(actor, metaWindow);
             return;
         }

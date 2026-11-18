@@ -39,6 +39,8 @@ function dump() {
         const f = mw.get_frame_rect();
         out.push({
             title: mw.get_title(), wmClass: mw.get_wm_class(), focused: mw.has_focus(),
+            type: mw.get_window_type(), above: mw.is_above(), transientFor: mw.get_transient_for()?.get_title() ?? null,
+            scratch: Tiling.isScratch(mw), monitor: mw.get_monitor(),
             frame: { x: f.x, y: f.y, w: f.width, h: f.height },
             actor: actorInfo(actor),
             clone: actorInfo(mw.clone),
