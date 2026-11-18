@@ -518,22 +518,22 @@
 
     <!-- Settings -->
     <key type="i" name="horizontal-margin">
-      <default>20</default>
+      <default>10</default>
       <summary>Minimum margin from windows left and right edge</summary>
     </key>
 
     <key type="i" name="vertical-margin">
-      <default>20</default>
+      <default>10</default>
       <summary>Minimum margin from windows top edge</summary>
     </key>
 
     <key type="i" name="vertical-margin-bottom">
-        <default>20</default>
+        <default>10</default>
         <summary>Minimum margin from windows bottom edge</summary>
     </key>
 
     <key type="i" name="window-gap">
-      <default>20</default>
+      <default>10</default>
       <summary>Minimum gap between windows</summary>
     </key>
 
